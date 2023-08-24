@@ -1,8 +1,9 @@
 ﻿using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System;
 using System.Text;
 
-namespace RabbitSender // Note: actual namespace depends on the project name.
+namespace RabbitReceiver2 // Note: actual namespace depends on the project name.
 {
     internal class Program
     {
@@ -10,7 +11,7 @@ namespace RabbitSender // Note: actual namespace depends on the project name.
         {
             ConnectionFactory factory = new();
             factory.Uri = new Uri("amqp://guest:guest@localhost:5672");
-            factory.ClientProvidedName = "Rabbit Sender App";
+            factory.ClientProvidedName = "Rabbit Receiver2 App";
 
             IConnection cnn = factory.CreateConnection();
 
@@ -23,15 +24,28 @@ namespace RabbitSender // Note: actual namespace depends on the project name.
             channel.ExchangeDeclare(exchangeName, ExchangeType.Direct);
             channel.QueueDeclare(queueName, false, false, false, null);
             channel.QueueBind(queueName, exchangeName, routingKey, null);
+            channel.BasicQos(0, 1, false);
 
-            for (int i = 0; i < 60; i++)
+            var consumer = new EventingBasicConsumer(channel);
+            consumer.Received += (sender, args) =>
             {
-                Console.WriteLine($"sending message {i}");
-                byte[] messagebodyBytes = Encoding.UTF8.GetBytes($"Message #{i}");
-                channel.BasicPublish(exchangeName, routingKey, null, messagebodyBytes);
-                Thread.Sleep(1000);
-            }
+                Task.Delay(TimeSpan.FromSeconds(3)).Wait();
 
+                var body = args.Body.ToArray();
+
+                string message = Encoding.UTF8.GetString(body);
+
+                Console.WriteLine($"message received {message}");
+
+                channel.BasicAck(args.DeliveryTag, false);
+
+            };
+
+            string consumerTag = channel.BasicConsume(queueName, false, consumer);
+
+            Console.ReadLine();
+
+            channel.BasicCancel(consumerTag);
 
             channel.Close();
             cnn.Close();
